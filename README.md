@@ -7,225 +7,203 @@
 
 ## Abstract
 
-This project studies whether the **30-minute ahead direction** of **ES (S&P 500 E-mini futures)** can be predicted using minute-level features from ES and related cross-asset instruments (USDJPY, USDCAD, VIX, GVZ).
+This project investigates whether the **30-minute ahead direction** of ES (S&P 500 E-mini Futures) can be predicted using minute-level financial features. I analyze return, volatility, and cross-asset structure, engineer multiple feature families, and evaluate logistic regression and random forest models using time-respecting cross-validation.
 
-I construct lag, volatility, correlation, momentum, and regime features and evaluate logistic regression and random forest classifiers under **strict time-respecting cross-validation**.
+Results show that:
 
-The main findings are:
+* **Lagged returns alone** achieve ~0.564 accuracy
+* **No feature set outperforms the majority baseline**
+* Cross-asset correlations, volatility, and momentum do **not** improve predictability
 
-* Simple **lagged returns alone** achieve ≈0.564 accuracy.
-* Adding volatility, correlation, and momentum features **does not improve performance**.
-* No model outperforms a **majority-class baseline (0.564)**.
-
-These results suggest that short-horizon ES direction is extremely difficult to forecast and that most engineered features add noise rather than usable signal.
+This highlights the difficulty of short-horizon forecasting in liquid futures markets.
 
 ---
 
-## 1. Introduction
+# 1. Introduction
 
-Short-horizon forecasting in liquid futures markets is notoriously challenging. Despite clear economic links between equity indices, FX, and volatility products, it remains unclear whether these relationships can be exploited to predict index futures over tens of minutes.
+Equity index futures such as ES exhibit rapid mean reversion, noise, and short-lived autocorrelation, making directional prediction extremely challenging.
 
-In this study, I ask:
+This study asks:
 
-> **Can we predict whether ES will move up or down over the next 30 minutes using cross-asset information and volatility structure?**
+**Can we predict whether ES will move up or down 30 minutes ahead using cross-asset information?**
 
-To answer this, I:
-
-1. Build a unified minute-level dataset across ES, USDJPY, USDCAD, VIX, and GVZ.
-2. Engineer features that capture lagged returns, volatility, cross-asset correlations, momentum, and volatility regimes.
-3. Evaluate models with time-respecting cross-validation and compare to simple baselines.
+I construct a unified dataset across ES, FX pairs (USDJPY, USDCAD), and volatility indices (VIX, GVZ), engineer predictive features, and benchmark statistical models against simple baselines.
 
 ---
 
-## 2. Data
+# 2. Data
 
-### 2.1 Instruments and frequency
+## 2.1 Instruments and Sampling
 
-* **ES** – S&P 500 E-mini futures
-* **USDJPY**, **USDCAD** – FX pairs
-* **VIX**, **GVZ** – volatility indices
+* ES — S&P 500 E-mini futures
+* USDJPY, USDCAD — FX
+* VIX, GVZ — volatility indices
 
-All series are at **minute frequency**. After cleaning, they are merged on timestamp into a single dataframe containing aligned returns.
-
-### 2.2 Return distributions
-
-The per-minute return distributions exhibit fat tails and strong concentration near zero.
-
-**Figure 1 – ES minute-return distribution**
-![Figure 1: ES return distribution](images/es_return_dist.png)
-
-**Figure 2 – BTC minute-return distribution**
-![Figure 2: BTC return distribution](images/btc_return_dist.png)
-
-**Figure 3 – RTY minute-return distribution**
-![Figure 3: RTY return distribution](images/rty_return_dist.png)
-
-**Figure 4 – NQ minute-return distribution**
-![Figure 4: NQ return distribution](images/nq_return_dist.png)
-
-### 2.3 Rolling volatility
-
-Rolling volatility exhibits clear clustering across all assets.
-
-**Figure 5 – ES 60-minute rolling volatility**
-![Figure 5: ES rolling volatility (60-min window)](images/es_vol_60min.png)
-
-**Figure 6 – BTC 60-minute rolling volatility**
-![Figure 6: BTC rolling volatility (60-min window)](images/btc_vol_60min.png)
-
-**Figure 7 – RTY 60-minute rolling volatility**
-![Figure 7: RTY rolling volatility (60-min window)](images/rty_vol_60min.png)
-
-**Figure 8 – NQ 60-minute rolling volatility**
-![Figure 8: NQ rolling volatility (60-min window)](images/nq_vol_60min.png)
+Data is sampled at **1-minute frequency** and merged on timestamp.
 
 ---
 
-## 3. Cross-Asset Structure
+## 2.2 Return Distributions
 
-To understand relationships between assets, I examine both static and rolling correlations.
+The per-minute returns exhibit strong concentration around zero and fat tails.
 
-**Figure 9 – Cross-asset return correlation matrix**
-![Figure 9: Cross-asset return correlation](images/cross_asset_corr_heatmap.png)
+**Figure 1 — ES return distribution**
+![Figure 1](./images/es_return_dist.png)
 
-ES shows:
+**Figure 2 — BTC return distribution**
+![Figure 2](./images/btc_return_dist.png)
 
-* Mild negative correlation with VIX.
-* Weak but non-zero relationships with FX pairs.
+**Figure 3 — RTY return distribution**
+![Figure 3](./images/rty_return_dist.png)
 
-I also examine the time-varying ES–VIX relationship with rolling correlations.
-
-**Figure 10 – Rolling correlation between ES and VIX (300-minute window)**
-![Figure 10: Rolling correlation ES vs VIX](images/es_vix_rolling_corr_300min.png)
-
-The correlation fluctuates over time, but as later results show, these fluctuations do not translate into improved predictive power for 30-minute direction.
+**Figure 4 — NQ return distribution**
+![Figure 4](./images/nq_return_dist.png)
 
 ---
 
-## 4. Problem Formulation and Features
+## 2.3 Rolling Volatility
 
-### 4.1 Target label
+Volatility clusters strongly across all markets.
 
-Let ( r^{ES}_t ) denote the per-minute ES return.
-The 30-minute ahead cumulative return is:
+**Figure 5 — ES rolling volatility (60-minute window)**
+![Figure 5](./images/es_vol_60min.png)
 
-[
-r^{ES}*{t:t+30} = \sum*{k=1}^{30} r^{ES}_{t+k}
-]
+**Figure 6 — BTC rolling volatility**
+![Figure 6](./images/btc_vol_60min.png)
 
-The binary label is:
+**Figure 7 — RTY rolling volatility**
+![Figure 7](./images/rty_vol_60min.png)
 
-* `1` if ( r^{ES}_{t:t+30} > 0 ) (up),
-* `0` otherwise (down).
+**Figure 8 — NQ rolling volatility**
+![Figure 8](./images/nq_vol_60min.png)
 
-In code:
+---
+
+# 3. Cross-Asset Structure
+
+## 3.1 Static Correlation Structure
+
+**Figure 9 — Cross-asset correlation matrix**
+![Figure 9](./images/cross_asset_corr_heatmap.png)
+
+ES exhibits:
+
+* Mild negative correlation with VIX
+* Weak correlation with FX pairs
+* Weak but non-zero correlation with GVZ
+
+## 3.2 Time-Varying Correlation
+
+**Figure 10 — Rolling correlation between ES and VIX (300-min window)**
+![Figure 10](./images/es_vix_rolling_corr_300min.png)
+
+---
+
+# 4. Problem Formulation and Features
+
+## 4.1 Target Label (Fixed Math)
+
+Let **r_ES(t)** denote the per-minute return of ES at time *t*.
+
+The **30-minute ahead return** is computed by shifting ES returns backward by 30 minutes:
 
 ```python
 combined["target_ES_30m"] = combined["ret_ES"].shift(-30)
+```
+
+We convert this to a **binary classification label**:
+
+* **1** → ES goes **up** over the next 30 minutes
+* **0** → ES goes **down or stays flat**
+
+```python
 combined["target_ES_30m_updown"] = (combined["target_ES_30m"] > 0).astype(int)
 ```
 
-### 4.2 Feature families
-
-I construct the following feature groups:
-
-* **Lagged returns**
-
-  * `lag_ES`, `lag_USDJPY`, `lag_USDCAD`, `lag_VIX`, `lag_GVZ`
-* **Rolling volatility**
-
-  * `vol_ES_60`, `vol_ES_120`, `vol_ES_300`
-  * Equivalent vol features for FX and volatility indices in the full feature set
-* **Cross-asset rolling correlations**
-
-  * `corr_ES_VIX_60`, `corr_ES_VIX_300`
-  * `corr_ES_USDJPY_60`, `corr_ES_USDJPY_300`
-  * `corr_ES_USDCAD_60`, `corr_ES_USDCAD_300`
-* **Momentum features**
-
-  * `mom_ES_5`, `mom_ES_10`, `mom_ES_30`
-* **Volatility regime indicator**
-
-  * `regime_high_vol` based on the 70th percentile of `vol_ES_300`
-
-These features are combined into four groups used in the ablation study:
-
-1. `lags_only`
-2. `lags_plus_ES_vol`
-3. `lags_ES_vol_plus_corr`
-4. `full_features`
+This label serves as the target for all predictive models.
 
 ---
 
-## 5. Experimental Setup
+## 4.2 Feature Families
 
-### 5.1 Models
+### **Lagged Returns**
 
-I evaluate two model families:
+Captures immediate past movement:
 
-* **Logistic Regression** (`max_iter = 2000`)
-* **Random Forest Classifier**
+* `lag_ES`, `lag_USDJPY`, `lag_USDCAD`, `lag_VIX`, `lag_GVZ`
 
-  * `n_estimators = 200`
-  * `max_depth = 8`
-  * `min_samples_split = 50`
-  * `min_samples_leaf = 25`
+### **Volatility**
 
-### 5.2 Time-respecting cross-validation
+Rolling standard deviation over multiple windows:
 
-To avoid look-ahead bias, I use **TimeSeriesSplit** with 5 folds:
+* `vol_ES_60`, `vol_ES_120`, `vol_ES_300`
+* Similar features for FX and volatility indices (in the full feature set)
 
-* Each fold trains on a contiguous block of **past** data.
-* Evaluation is on the subsequent **future** block.
-* The same folds are used for baselines and all models.
+### **Cross-Asset Correlations**
 
----
+Measures how ES co-moves with VIX and major FX pairs:
 
-## 6. Baseline Performance
+* `corr_ES_VIX_60`, `corr_ES_VIX_300`
+* `corr_ES_USDJPY_60`, `corr_ES_USDJPY_300`
+* `corr_ES_USDCAD_60`, `corr_ES_USDCAD_300`
 
-Two baselines are constructed:
+### **Momentum**
 
-* **Random baseline** – predicts labels according to the training-set class distribution.
-* **Majority baseline** – always predicts the most frequent class in the training set.
+Short-term cumulative returns:
 
-| Baseline       | Mean Accuracy |
-| -------------- | ------------- |
-| Random         | 0.513         |
-| Majority class | **0.564**     |
+* `mom_ES_5`, `mom_ES_10`, `mom_ES_30`
 
-The majority baseline is surprisingly strong due to mild class imbalance in the direction label.
+### **Volatility Regime Indicator**
+
+Binary regime = 1 if ES volatility over the last 300 minutes is in the top 30%.
 
 ---
 
-## 7. Model Results and Feature Importance
+# 5. Experimental Setup
 
-### 7.1 Overall model performance
+## 5.1 Models
 
-Across all feature sets and models:
+* **Logistic Regression** (linear baseline)
+* **Random Forest Classifier** (nonlinear benchmark)
 
-* Logistic regression accuracies are ≈0.564.
-* Random forest accuracies are ≈0.56.
-* Neither model significantly exceeds the majority baseline.
+## 5.2 Time-Respecting Cross-Validation
 
-### 7.2 Logistic regression coefficients
+I use **TimeSeriesSplit (5 folds)**:
 
-To interpret the linear model, I inspect the sorted coefficients of the logistic regression fitted on the full feature set.
-
-**Figure 11 – Logistic regression coefficients (full features, sorted)**
-![Figure 11: Logistic regression coefficients (sorted)](images/logistic_coeffs_sorted.png)
-
-The largest-magnitude coefficients correspond to:
-
-* Long-window cross-asset correlations (`corr_ES_USDCAD_300`, `corr_ES_VIX_300`, `corr_ES_USDJPY_300`)
-* The high-volatility regime indicator
-
-However, even with these features, predictive accuracy does not improve beyond the lag-only model, suggesting that their apparent importance does not translate into a usable edge.
+* Train on **past**
+* Test on **future**
+* No leakage
+* Same folds for all models and baselines
 
 ---
 
-## 8. Ablation Study
+# 6. Baseline Performance
 
-To quantify the contribution of each feature family, I run logistic regression with different feature groups:
+| Baseline          | Accuracy  |
+| ----------------- | --------- |
+| Random baseline   | 0.513     |
+| Majority baseline | **0.564** |
+
+The majority class is slightly more common, making it a strong baseline.
+
+---
+
+# 7. Model Results and Feature Importance
+
+## 7.1 Logistic Regression (full features)
+
+**Figure 11 — Logistic regression coefficients (sorted)**
+![Figure 11](./images/logistic_coeffs_sorted.png)
+
+Even with all engineered features, logistic regression does **not** outperform the lag-only model or majority baseline.
+
+## 7.2 Random Forest Feature Importance
+
+(Random forest plots can be added here if desired.)
+
+---
+
+# 8. Ablation Study
 
 | Feature Group           | # Features | Mean Accuracy | Std Dev |
 | ----------------------- | ---------: | ------------: | ------: |
@@ -236,47 +214,43 @@ To quantify the contribution of each feature family, I run logistic regression w
 
 ### Interpretation
 
-* The **simplest model (lags only)** performs best.
-* Adding ES volatility features **does not change accuracy**.
-* Adding correlation and momentum features **does not improve accuracy** and slightly increases variance.
-* The full feature set is marginally worse, consistent with the idea that most added features are noise at this horizon.
+* The **lag-only model performs best**
+* Volatility, correlation, and momentum features provide **no** incremental value
+* Larger feature sets introduce noise
 
 ---
 
-## 9. Discussion
+# 9. Discussion
 
-The empirical results support a pessimistic view of short-horizon predictability in ES:
+The 30-minute horizon exhibits **extremely low signal-to-noise ratio**.
+Despite strong economic intuition linking equity indices, FX, and volatility:
 
-* Cross-asset correlations and volatility structure are intuitively appealing, but they do **not** provide measurable predictive power for 30-minute direction beyond what is already captured by simple lagged returns.
-* The tiny performance differences across feature sets indicate that the signal-to-noise ratio is extremely low.
-* The fact that the **majority baseline** matches or slightly exceeds the ML models underscores the importance of always benchmarking against simple baselines.
-
----
-
-## 10. Limitations
-
-This study has several limitations:
-
-* Only a **single horizon** (30 minutes) and primary asset (ES) are considered.
-* No transaction costs, slippage, or position sizing rules are modeled, so even small edges would not necessarily be tradable.
-* Only logistic regression and random forest classifiers are evaluated; more sophisticated sequence models might capture different structure.
-* Feature engineering is restricted to simple statistical features rather than full limit-order-book or microstructure data.
+* Cross-asset features do **not** enhance forecasting performance
+* Short-term ES movement remains effectively unpredictable
+* Even sophisticated features cannot beat a majority baseline
 
 ---
 
-## 11. Future Work
+# 10. Limitations
 
-Future extensions could explore:
-
-* Multiple horizons (5, 10, 60 minutes) to see where any signal is strongest.
-* Regime-specific models trained separately on high- and low-volatility regimes.
-* Inclusion of more macro futures (rates, commodities) and sector indices.
-* Non-linear and sequence models such as gradient boosting, LSTMs, or Transformers.
-* Evaluation using probabilistic scoring rules (log loss, Brier score) rather than pure accuracy.
+* Only ES and 30-minute horizon tested
+* No transaction cost modeling
+* Only two model families (LogReg, RF)
+* Features are return-based, not microstructure-based
 
 ---
 
-## 12. Repository Structure
+# 11. Future Work
+
+* Evaluate multiple horizons (5, 10, 60 minutes)
+* Add macro futures (ZN, CL, GC), sector indices
+* Explore nonlinear temporal models (LSTM, Transformers)
+* Use probabilistic scoring metrics (log loss, Brier score)
+* Try regime-specific models
+
+---
+
+# 12. Repository Structure
 
 ```text
 .
@@ -304,20 +278,24 @@ Future extensions could explore:
 
 ---
 
-## 13. How to Run
+# 13. How to Run
 
-### In Google Colab
+## In Google Colab
 
-1. Open `notebooks/RWS_Challenge.ipynb`.
-2. Mount Google Drive and set `DATA_DIR` to the RWS dataset location.
-3. Run all cells in order.
+Open the notebook and set the data path:
 
-### Locally
+```python
+DATA_DIR = "/content/drive/MyDrive/project_data"
+```
 
-```bash
+Then run all cells.
+
+## Locally
+
+```
 pip install -r requirements.txt
 ```
 
-Then open the notebook with Jupyter or VS Code and run the analysis.
+Open the notebook in Jupyter or VS Code.
 
 ---
